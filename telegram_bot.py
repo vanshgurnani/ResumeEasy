@@ -520,10 +520,14 @@ Found a bug or have suggestions? We'd love to hear from you!
                 "If you've already analyzed a resume, use /chat to start chatting about it!"
             )
 
+    def _get_command_handler(self, command, handler_func):
+        """Helper method to create command handlers."""
+        return CommandHandler(command, handler_func)
+
     def run(self):
-        """Start the bot."""
+        """Start the bot with cloud deployment optimizations."""
         application = Application.builder().token(self.bot_token).build()
-        
+
         # Add handlers
         application.add_handler(CommandHandler("start", self.start_command))
         application.add_handler(CommandHandler("help", self.help_command))
@@ -534,9 +538,19 @@ Found a bug or have suggestions? We'd love to hear from you!
         application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
         application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message))
-        
+
+        # Store application reference for external control
+        self.application = application
+
         logger.info("Starting Resume Extractor Bot...")
-        application.run_polling()
+
+        # Check if running in cloud environment
+        if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
+            # For cloud deployment, disable signal handling to avoid set_wakeup_fd issues
+            application.run_polling(stop_signals=None)
+        else:
+            # For local development, use normal polling
+            application.run_polling()
 
 if __name__ == "__main__":
     try:

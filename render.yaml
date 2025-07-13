@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: resumeasy-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_app.py
+    envVars:
+      - key: CLOUD_DEPLOYMENT
+        value: true
+      - key: RUN_MODE
+        value: flask
+      - key: FLASK_PORT
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true
+    
+  - type: worker
+    name: resumeasy-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_app.py
+    envVars:
+      - key: CLOUD_DEPLOYMENT
+        value: true
+      - key: RUN_MODE
+        value: bot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    autoDeploy: true
