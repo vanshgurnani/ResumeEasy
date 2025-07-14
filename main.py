@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
 Flask API for controlling the Resume Extractor Telegram Bot
-Optimized for cloud deployment (Render, Heroku, etc.)
 """
 
 import os
 import threading
 import time
 import logging
-import signal
-import sys
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -30,119 +27,57 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-class BotManager:
-    """Manages the Telegram bot lifecycle with cloud deployment optimizations."""
+# Global variables to manage bot state
+bot_instance = None
+bot_thread = None
+bot_running = False
 
+class BotManager:
+    """Manages the Telegram bot lifecycle."""
+    
     def __init__(self):
         self.bot = None
         self.thread = None
         self.running = False
         self.loop = None
-        self._shutdown_event = threading.Event()
-
-        # Set up signal handlers for graceful shutdown
-        self._setup_signal_handlers()
-
-    def _setup_signal_handlers(self):
-        """Set up signal handlers for graceful shutdown."""
-        def signal_handler(signum, frame):
-            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-            self._shutdown_event.set()
-            self.stop_bot()
-            sys.exit(0)
-
-        # Only set up signal handlers if we're in the main thread
-        if threading.current_thread() is threading.main_thread():
-            try:
-                signal.signal(signal.SIGTERM, signal_handler)
-                signal.signal(signal.SIGINT, signal_handler)
-            except Exception as e:
-                logger.warning(f"Could not set up signal handlers: {e}")
-
+    
     def start_bot(self):
-        """Start the Telegram bot with cloud deployment optimizations."""
+        """Start the Telegram bot in a separate thread."""
         if self.running:
             return {"status": "error", "message": "Bot is already running"}
-
+        
         try:
             # Create bot instance
             self.bot = ResumeTelegramBot()
-
-            # For cloud deployment, run bot directly in main thread if possible
-            if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
-                return self._start_bot_direct()
+            
+            # Start bot in a separate thread
+            self.thread = threading.Thread(target=self._run_bot, daemon=True)
+            self.thread.start()
+            
+            # Wait a moment to check if bot started successfully
+            time.sleep(2)
+            
+            if self.running:
+                return {"status": "success", "message": "Bot started successfully"}
             else:
-                return self._start_bot_threaded()
-
+                return {"status": "error", "message": "Failed to start bot"}
+                
         except Exception as e:
             logger.error(f"Error starting bot: {e}")
             return {"status": "error", "message": f"Failed to start bot: {str(e)}"}
-
-    def _start_bot_direct(self):
-        """Start bot directly in main thread (for cloud deployment)."""
+    
+    def _run_bot(self):
+        """Run the bot in the thread with proper async event loop."""
         try:
             self.running = True
-            logger.info("Starting Telegram bot in main thread...")
+            logger.info("Starting Telegram bot...")
 
-            # Start bot in background thread but with proper event loop handling
-            self.thread = threading.Thread(target=self._run_bot_cloud_safe, daemon=False)
-            self.thread.start()
+            # Create new event loop for this thread
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
-            # Wait a moment to check if bot started successfully
-            time.sleep(3)
-
-            if self.running:
-                return {"status": "success", "message": "Bot started successfully"}
-            else:
-                return {"status": "error", "message": "Failed to start bot"}
-
-        except Exception as e:
-            logger.error(f"Error in direct bot start: {e}")
-            return {"status": "error", "message": f"Failed to start bot: {str(e)}"}
-
-    def _start_bot_threaded(self):
-        """Start bot in separate thread (for local development)."""
-        try:
-            # Start bot in a separate thread
-            self.thread = threading.Thread(target=self._run_bot_cloud_safe, daemon=True)
-            self.thread.start()
-
-            # Wait a moment to check if bot started successfully
-            time.sleep(2)
-
-            if self.running:
-                return {"status": "success", "message": "Bot started successfully"}
-            else:
-                return {"status": "error", "message": "Failed to start bot"}
-
-        except Exception as e:
-            logger.error(f"Error in threaded bot start: {e}")
-            return {"status": "error", "message": f"Failed to start bot: {str(e)}"}
-
-    def _run_bot_cloud_safe(self):
-        """Run the bot with cloud deployment safety measures."""
-        try:
-            self.running = True
-            logger.info("Starting Telegram bot with cloud-safe configuration...")
-
-            # Avoid set_wakeup_fd issues in cloud environments
-            try:
-                # Create new event loop for this thread
-                self.loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(self.loop)
-
-                # Disable signal handling in asyncio for cloud deployment
-                if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
-                    # Run bot without signal handling
-                    self.loop.run_until_complete(self._run_bot_async())
-                else:
-                    # Run bot normally for local development
-                    self.bot.run()
-
-            except Exception as loop_error:
-                logger.error(f"Event loop error: {loop_error}")
-                # Fallback: try running without custom event loop
-                self.bot.run()
+            # Run the bot
+            self.bot.run()
 
         except Exception as e:
             logger.error(f"Bot error: {e}")
@@ -150,76 +85,33 @@ class BotManager:
         finally:
             # Clean up the event loop
             if self.loop and not self.loop.is_closed():
-                try:
-                    self.loop.close()
-                except Exception as cleanup_error:
-                    logger.warning(f"Error cleaning up event loop: {cleanup_error}")
-
-    async def _run_bot_async(self):
-        """Run bot asynchronously with proper error handling."""
-        try:
-            from telegram.ext import Application
-
-            application = Application.builder().token(self.bot.bot_token).build()
-
-            # Add handlers
-            application.add_handler(self.bot._get_command_handler("start", self.bot.start_command))
-            application.add_handler(self.bot._get_command_handler("help", self.bot.help_command))
-            application.add_handler(self.bot._get_command_handler("about", self.bot.about_command))
-            application.add_handler(self.bot._get_command_handler("chat", self.bot.chat_command))
-            application.add_handler(self.bot._get_command_handler("interview", self.bot.interview_command))
-            application.add_handler(self.bot._get_command_handler("stop", self.bot.stop_command))
-
-            from telegram.ext import MessageHandler, CallbackQueryHandler, filters
-            application.add_handler(MessageHandler(filters.Document.ALL, self.bot.handle_document))
-            application.add_handler(CallbackQueryHandler(self.bot.handle_callback_query))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.bot.handle_text_message))
-
-            # Store application reference for stopping
-            self.bot.application = application
-
-            # Start polling
-            await application.run_polling(stop_signals=None)  # Disable signal handling
-
-        except Exception as e:
-            logger.error(f"Async bot run error: {e}")
-            raise
-
+                self.loop.close()
+    
     def stop_bot(self):
-        """Stop the Telegram bot with proper cleanup."""
+        """Stop the Telegram bot."""
         if not self.running:
             return {"status": "error", "message": "Bot is not running"}
 
         try:
-            logger.info("Stopping Telegram bot...")
             self.running = False
-            self._shutdown_event.set()
 
             # Try to stop the bot gracefully
             if self.bot and hasattr(self.bot, 'application'):
                 try:
                     # Schedule the stop in the bot's event loop
                     if self.loop and not self.loop.is_closed():
-                        future = asyncio.run_coroutine_threadsafe(
+                        asyncio.run_coroutine_threadsafe(
                             self.bot.application.stop(),
                             self.loop
                         )
-                        # Wait for stop with timeout
-                        future.result(timeout=5)
                 except Exception as stop_error:
                     logger.warning(f"Could not gracefully stop bot: {stop_error}")
 
-            # Wait for thread to finish with timeout
-            if self.thread and self.thread.is_alive():
-                self.thread.join(timeout=10)
-                if self.thread.is_alive():
-                    logger.warning("Bot thread did not stop gracefully")
-
-            return {"status": "success", "message": "Bot stopped successfully"}
+            return {"status": "success", "message": "Bot stop signal sent"}
         except Exception as e:
             logger.error(f"Error stopping bot: {e}")
             return {"status": "error", "message": f"Failed to stop bot: {str(e)}"}
-
+    
     def get_status(self):
         """Get bot status."""
         return {
@@ -227,8 +119,7 @@ class BotManager:
             "data": {
                 "running": self.running,
                 "thread_alive": self.thread.is_alive() if self.thread else False,
-                "bot_instance": self.bot is not None,
-                "shutdown_requested": self._shutdown_event.is_set()
+                "bot_instance": self.bot is not None
             }
         }
 

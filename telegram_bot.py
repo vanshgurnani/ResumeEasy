@@ -524,8 +524,8 @@ Found a bug or have suggestions? We'd love to hear from you!
         """Helper method to create command handlers."""
         return CommandHandler(command, handler_func)
 
-    def run(self):
-        """Start the bot with cloud deployment optimizations."""
+    def setup_application(self):
+        """Set up the application with handlers."""
         application = Application.builder().token(self.bot_token).build()
 
         # Add handlers
@@ -541,16 +541,77 @@ Found a bug or have suggestions? We'd love to hear from you!
 
         # Store application reference for external control
         self.application = application
+        return application
 
-        logger.info("Starting Resume Extractor Bot...")
+    def run(self):
+        """Start the bot with cloud deployment optimizations."""
+        try:
+            application = self.setup_application()
 
-        # Check if running in cloud environment
-        if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
-            # For cloud deployment, disable signal handling to avoid set_wakeup_fd issues
-            application.run_polling(stop_signals=None)
-        else:
-            # For local development, use normal polling
-            application.run_polling()
+            logger.info("Starting Resume Extractor Bot...")
+
+            # Check if running in cloud environment
+            if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
+                # For cloud deployment, use more robust polling configuration
+                logger.info("Running in cloud deployment mode")
+                application.run_polling(
+                    poll_interval=1.0,
+                    timeout=10,
+                    bootstrap_retries=-1,
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30,
+                    pool_timeout=30,
+                    stop_signals=None  # Disable signal handling to avoid set_wakeup_fd issues
+                )
+            else:
+                # For local development, use normal polling
+                logger.info("Running in local development mode")
+                application.run_polling()
+
+        except Exception as e:
+            logger.error(f"Error in bot run: {e}")
+            raise
+
+    async def run_async(self):
+        """Run the bot asynchronously for better control."""
+        try:
+            application = self.setup_application()
+
+            logger.info("Starting Resume Extractor Bot (async mode)...")
+
+            # Initialize the application
+            await application.initialize()
+
+            # Start the application
+            await application.start()
+
+            # Start polling
+            await application.updater.start_polling(
+                poll_interval=1.0,
+                timeout=10,
+                bootstrap_retries=-1,
+                read_timeout=30,
+                write_timeout=30,
+                connect_timeout=30,
+                pool_timeout=30
+            )
+
+            # Keep running until stopped
+            await application.updater.idle()
+
+        except Exception as e:
+            logger.error(f"Error in async bot run: {e}")
+            raise
+        finally:
+            # Clean shutdown
+            if hasattr(self, 'application') and self.application:
+                try:
+                    await self.application.updater.stop()
+                    await self.application.stop()
+                    await self.application.shutdown()
+                except Exception as cleanup_error:
+                    logger.warning(f"Error during cleanup: {cleanup_error}")
 
 if __name__ == "__main__":
     try:
