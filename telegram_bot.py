@@ -1,4 +1,3 @@
-import os
 import logging
 import asyncio
 from typing import Optional
@@ -12,11 +11,15 @@ from telegram.ext import (
     filters
 )
 from telegram.constants import ParseMode
+import datetime
 import tempfile
 from dotenv import load_dotenv
+import pdfkit
+from playwright.async_api import async_playwright
 
 from resume_extractor import ResumeExtractor
 from file_processor import FileProcessor
+import os
 
 # Load environment variables
 load_dotenv()
@@ -238,19 +241,89 @@ Found a bug or have suggestions? We'd love to hear from you!
             reply_markup=reply_markup
         )
 
+    async def convert_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /convert command to start resume-to-PDF conversion."""
+        user_id = update.effective_user.id
+        self.user_states[user_id] = {'mode': 'convert', 'resume_data': None}
+        await update.message.reply_text(
+            "📄 Please upload your resume file (PDF, DOCX, or TXT). I will convert it to a beautiful PDF using our template!"
+        )
+
+    def fill_html_template(self, resume_data: dict) -> str:
+        pi = resume_data.get('personal_info', {})
+        name = pi.get('name', '')
+        email = pi.get('email', '')
+        phone = pi.get('phone', '')
+        location = pi.get('location', '')
+
+        # Education
+        education_html = ''
+        for edu in resume_data.get('education', []):
+            education_html += f"<div class='section'><span class='title'>{edu.get('institution','')}</span> <span class='date'>{edu.get('graduation_date','')}</span><div class='clear'></div><span class='org'>{edu.get('degree','')}</span><br>GPA: {edu.get('gpa','')}</div>"
+
+        # Experience
+        experience_html = ''
+        for exp in resume_data.get('experience', []):
+            experience_html += f"<div class='section'><span class='title'>{exp.get('company','')}</span> <span class='date'>{exp.get('duration','')}</span><div class='clear'></div><span class='org'>{exp.get('position','')}</span><ul>"
+            for resp in exp.get('responsibilities', []):
+                experience_html += f"<li>{resp}</li>"
+            experience_html += "</ul></div>"
+
+        # Projects
+        projects_html = ''
+        for proj in resume_data.get('projects', []):
+            projects_html += f"<div class='section'><span class='title'>{proj.get('name','')}</span><br>{proj.get('description','') if proj.get('description') else ''}<br>Tech: {', '.join(proj.get('technologies', [])) if proj.get('technologies') else ''}<br>URL: {proj.get('url','') if proj.get('url') else ''}</div>"
+
+        # Achievements
+        achievements_html = ''
+        for ach in resume_data.get('achievements', []):
+            achievements_html += f"<li>{ach}</li>"
+
+        # Skills
+        skills = resume_data.get('skills', {})
+        skills_html = ''
+        for cat, items in skills.items():
+            if items:
+                skills_html += f"<b>{cat.title()}:</b> {', '.join(items)}<br>"
+
+        template_path = os.path.join(os.path.dirname(__file__), 'index.html')
+        with open(template_path, 'r', encoding='utf-8') as f:
+            html_template = f.read()
+        html = html_template.format(
+            name=name,
+            email=email,
+            phone=phone,
+            location=location,
+            education_section=education_html,
+            experience_section=experience_html,
+            projects_section=projects_html,
+            achievements_section=achievements_html,
+            skills_section=skills_html
+        )
+        return html
+
+    async def html_to_pdf_playwright(self, html_content, pdf_path):
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            await page.set_content(html_content)
+            await page.pdf(path=pdf_path, format="A4")
+            await browser.close()
+
+    def get_unique_path(self, suffix):
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        return os.path.join('resume_jsons', f'resume_{timestamp}{suffix}')
+
     async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle document uploads."""
         document = update.message.document
-        
         if not document:
             await update.message.reply_text("❌ No document received. Please try again.")
             return
-        
         # Check file size (20MB limit)
         if document.file_size > 20 * 1024 * 1024:
             await update.message.reply_text("❌ File too large. Please upload files smaller than 20MB.")
             return
-        
         # Check file extension
         if not self.file_processor.is_supported_file(document.file_name):
             supported = ", ".join(self.file_processor.get_supported_extensions())
@@ -258,52 +331,53 @@ Found a bug or have suggestions? We'd love to hear from you!
                 f"❌ Unsupported file format.\n\nSupported formats: {supported}"
             )
             return
-        
+        # --- CONVERT MODE HANDLING ---
+        user_id = update.effective_user.id
+        user_state = self.user_states.get(user_id, {})
+        if user_state.get('mode') == 'convert':
+            os.makedirs('resume_jsons', exist_ok=True)
+            file = await context.bot.get_file(document.file_id)
+            download_path = self.get_unique_path(os.path.splitext(document.file_name)[1])
+            await file.download_to_drive(download_path)
+            file_extension = os.path.splitext(document.file_name)[1]
+            extracted_text = await self.file_processor.process_file(download_path, file_extension)
+            os.remove(download_path)
+            if not extracted_text:
+                await update.message.reply_text("❌ Could not extract text from the uploaded file.")
+                return
+            resume_data = await self.resume_extractor.extract_resume_info(extracted_text)
+            html = self.fill_html_template(resume_data)
+            pdf_path = self.get_unique_path('.pdf')
+            await self.html_to_pdf_playwright(html, pdf_path)
+            with open(pdf_path, 'rb') as pdf:
+                await update.message.reply_document(pdf, filename='Converted_Resume.pdf')
+            os.remove(pdf_path)
+            self.user_states[user_id]['mode'] = 'normal'
+            return
+        # --- Default analysis flow ---
+        file = await context.bot.get_file(document.file_id)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(document.file_name)[1]) as temp_file:
+            temp_file_path = temp_file.name
+            await file.download_to_drive(temp_file_path)
+        file_extension = os.path.splitext(document.file_name)[1]
+        extracted_text = await self.file_processor.process_file(temp_file_path, file_extension)
+        os.remove(temp_file_path)
+        if not extracted_text:
+            await update.message.reply_text("❌ Could not extract text from the uploaded file.")
+            return
+        resume_data = await self.resume_extractor.extract_resume_info(extracted_text)
+        # --- END CONVERT MODE HANDLING ---
         # Send processing message
         processing_msg = await update.message.reply_text("🔄 Processing your resume... Please wait.")
-        
         try:
-            # Download file
-            file = await context.bot.get_file(document.file_id)
-            
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(document.file_name)[1]) as temp_file:
-                temp_file_path = temp_file.name
-                await file.download_to_drive(temp_file_path)
-            
-            # Extract text from file
-            file_extension = os.path.splitext(document.file_name)[1]
-            extracted_text = await self.file_processor.process_file(temp_file_path, file_extension)
-            
-            # Clean up temporary file
-            os.unlink(temp_file_path)
-            
-            if not extracted_text:
-                await processing_msg.edit_text("❌ Failed to extract text from the file. Please try a different file.")
-                return
-            
-            if len(extracted_text.strip()) < 50:
-                await processing_msg.edit_text("❌ The file appears to contain very little text. Please check your file and try again.")
-                return
-            
-            # Update processing message
-            await processing_msg.edit_text("🧠 Analyzing resume with AI... Almost done!")
-            
-            # Extract resume information using Gemini
-            extracted_info = await self.resume_extractor.extract_resume_info(extracted_text)
-            
             # Format and send results
-            formatted_result = self.resume_extractor.format_extracted_info(extracted_info)
-            
+            formatted_result = self.resume_extractor.format_extracted_info(resume_data)
             await processing_msg.edit_text(formatted_result, parse_mode=ParseMode.MARKDOWN)
-            
             # Store resume data for chat functionality
-            user_id = update.effective_user.id
             self.user_states[user_id] = {
                 'mode': 'normal',
-                'resume_data': extracted_info
+                'resume_data': resume_data
             }
-
             # Offer additional options
             keyboard = [
                 [InlineKeyboardButton("💬 Chat About Resume", callback_data="start_chat")],
@@ -311,7 +385,6 @@ Found a bug or have suggestions? We'd love to hear from you!
                 [InlineKeyboardButton("📋 Get Raw JSON Data", callback_data=f"json_{update.message.message_id}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-
             await update.message.reply_text(
                 "✅ Resume analysis complete! You can now:\n"
                 "• 💬 Chat with me about the resume\n"
@@ -320,10 +393,8 @@ Found a bug or have suggestions? We'd love to hear from you!
                 "• 📄 Upload another resume",
                 reply_markup=reply_markup
             )
-
             # Store extracted data for potential JSON export
-            context.user_data[f"json_{update.message.message_id}"] = extracted_info
-            
+            context.user_data[f"json_{update.message.message_id}"] = resume_data
         except Exception as e:
             logger.error(f"Error processing document: {e}")
             await processing_msg.edit_text(f"❌ An error occurred while processing your resume: {str(e)}")
@@ -480,6 +551,38 @@ Found a bug or have suggestions? We'd love to hear from you!
                     await query.message.reply_text(f"```json\n{json_text}\n```", parse_mode=ParseMode.MARKDOWN)
             else:
                 await query.message.reply_text("❌ JSON data not found. Please process a resume first.")
+        elif query.data == "convert":
+            user_id = update.effective_user.id
+            if user_id in self.user_states and self.user_states[user_id].get('mode') == 'convert':
+                # Extract text and parse resume as usual
+                file = await update.message.document.get_file()
+                import tempfile, os
+                with tempfile.NamedTemporaryFile(delete=False) as tf:
+                    file_path = tf.name
+                    await file.download_to_drive(file_path)
+                ext = os.path.splitext(file_path)[1].lower()
+                text = await self.file_processor.process_file(file_path, ext)
+                if not text:
+                    await update.message.reply_text("❌ Could not extract text from the uploaded file.")
+                    os.remove(file_path)
+                    return
+                resume_data = await self.resume_extractor.extract_resume_info(text)
+                self.user_states[user_id]['resume_data'] = resume_data
+                # Fill HTML template
+                html = self.fill_html_template(resume_data)
+                # Generate PDF
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as pdf_file:
+                    pdf_path = pdf_file.name
+                    await self.html_to_pdf_playwright(html, pdf_path)
+                # Send PDF
+                with open(pdf_path, 'rb') as pdf:
+                    await update.message.reply_document(pdf, filename='Converted_Resume.pdf')
+                os.remove(file_path)
+                os.remove(pdf_path)
+                self.user_states[user_id]['mode'] = 'normal'
+                await query.message.reply_text("✅ Your resume has been converted to PDF!")
+            else:
+                await query.message.reply_text("❌ Please upload a resume file first to convert it to PDF.")
 
     async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle text messages - either chat or regular messages."""
@@ -535,6 +638,7 @@ Found a bug or have suggestions? We'd love to hear from you!
         application.add_handler(CommandHandler("chat", self.chat_command))
         application.add_handler(CommandHandler("interview", self.interview_command))
         application.add_handler(CommandHandler("stop", self.stop_command))
+        application.add_handler(CommandHandler("convert", self.convert_command))
         application.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
         application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message))
