@@ -648,30 +648,19 @@ Found a bug or have suggestions? We'd love to hear from you!
         return application
 
     def run(self):
-        """Start the bot with cloud deployment optimizations."""
+        """Start the bot with proper configuration."""
         try:
             application = self.setup_application()
 
             logger.info("Starting Resume Extractor Bot...")
 
-            # Check if running in cloud environment
-            if os.getenv('CLOUD_DEPLOYMENT', 'false').lower() == 'true':
-                # For cloud deployment, use more robust polling configuration
-                logger.info("Running in cloud deployment mode")
-                application.run_polling(
-                    poll_interval=1.0,
-                    timeout=10,
-                    bootstrap_retries=-1,
-                    read_timeout=30,
-                    write_timeout=30,
-                    connect_timeout=30,
-                    pool_timeout=30,
-                    stop_signals=None  # Disable signal handling to avoid set_wakeup_fd issues
-                )
-            else:
-                # For local development, use normal polling
-                logger.info("Running in local development mode")
-                application.run_polling()
+            # Use simple polling configuration without invalid parameters
+            application.run_polling(
+                poll_interval=1.0,
+                timeout=10,
+                bootstrap_retries=-1,
+                stop_signals=None  # Disable signal handling to avoid threading issues
+            )
 
         except Exception as e:
             logger.error(f"Error in bot run: {e}")
@@ -690,15 +679,12 @@ Found a bug or have suggestions? We'd love to hear from you!
             # Start the application
             await application.start()
 
-            # Start polling
+            # Start polling with valid parameters only
             await application.updater.start_polling(
                 poll_interval=1.0,
                 timeout=10,
                 bootstrap_retries=-1,
-                read_timeout=30,
-                write_timeout=30,
-                connect_timeout=30,
-                pool_timeout=30
+                stop_signals=None  # Disable signal handling to avoid threading issues
             )
 
             # Keep running until stopped

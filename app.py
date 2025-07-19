@@ -53,15 +53,12 @@ def _run_bot_thread():
         logger.info("Starting bot in thread...")
         bot_manager.running = True
 
-        # Check if running in cloud environment
-        is_cloud = os.getenv('RENDER') or os.getenv('DYNO') or os.getenv('CLOUD_DEPLOYMENT', '').lower() == 'true'
+        # Create new event loop for this thread
+        bot_manager.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(bot_manager.loop)
 
-        if is_cloud:
-            logger.info("Cloud environment detected, using cloud-safe execution...")
-            _run_bot_cloud_safe()
-        else:
-            logger.info("Local environment detected, using standard execution...")
-            _run_bot_local()
+        # Run the bot using the async method
+        bot_manager.loop.run_until_complete(_async_bot_execution())
 
     except Exception as e:
         logger.error(f"Bot thread error: {e}")
@@ -74,42 +71,8 @@ def _run_bot_thread():
             except Exception as cleanup_error:
                 logger.warning(f"Event loop cleanup error: {cleanup_error}")
 
-def _run_bot_local():
-    """Run bot for local development."""
-    try:
-        # Create new event loop for this thread
-        bot_manager.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(bot_manager.loop)
-
-        # Run the bot
-        bot_manager.bot.run()
-
-    except Exception as e:
-        logger.error(f"Local bot execution error: {e}")
-        raise
-
-def _run_bot_cloud_safe():
-    """Run bot with cloud deployment safety measures."""
-    try:
-        # Create new event loop for this thread
-        bot_manager.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(bot_manager.loop)
-
-        # Run async bot execution
-        bot_manager.loop.run_until_complete(_async_bot_execution())
-
-    except Exception as e:
-        logger.error(f"Cloud bot execution error: {e}")
-        # Fallback to sync execution
-        logger.info("Falling back to synchronous execution...")
-        try:
-            bot_manager.bot.run()
-        except Exception as fallback_error:
-            logger.error(f"Fallback execution failed: {fallback_error}")
-            raise
-
 async def _async_bot_execution():
-    """Async bot execution for cloud environments."""
+    """Async bot execution with proper error handling."""
     try:
         from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
@@ -134,16 +97,12 @@ async def _async_bot_execution():
         await application.initialize()
         await application.start()
 
-        # Start polling with cloud settings
+        # Start polling with valid parameters only
         await application.updater.start_polling(
             poll_interval=2.0,
             timeout=30,
             bootstrap_retries=5,
-            read_timeout=60,
-            write_timeout=60,
-            connect_timeout=60,
-            pool_timeout=60,
-            stop_signals=None
+            stop_signals=None  # Disable signal handling to avoid threading issues
         )
 
         logger.info("Bot is running and polling...")
@@ -192,14 +151,18 @@ def start_bot():
 
 @app.route('/stop', methods=['POST'])
 def stop_bot():
-    global bot, bot_running
-    if not bot_running:
+    if not bot_manager.is_running():
         return jsonify({"status": "error", "message": "Bot not running"}), 400
 
     try:
-        if hasattr(bot, 'application'):
-            bot.application.stop()
-        bot_running = False
+        bot_manager.running = False
+        if hasattr(bot_manager.bot, 'application') and bot_manager.bot.application:
+            # Schedule stop in the bot's event loop
+            if bot_manager.loop and not bot_manager.loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    bot_manager.bot.application.stop(),
+                    bot_manager.loop
+                )
         return jsonify({"status": "success", "message": "Bot stopped"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -208,7 +171,7 @@ def stop_bot():
 def status():
     return jsonify({
         "status": "success",
-        "bot_running": bot_running,
+        "bot_running": bot_manager.is_running(),
         "timestamp": time.time()
     }), 200
 
@@ -216,7 +179,7 @@ def status():
 def health():
     return jsonify({
         "status": "healthy",
-        "bot_running": bot_running,
+        "bot_running": bot_manager.is_running(),
         "telegram_token_set": bool(os.getenv('TELEGRAM_BOT_TOKEN')),
         "gemini_key_set": bool(os.getenv('GEMINI_API_KEY'))
     }), 200
