@@ -126,7 +126,7 @@ async def _async_bot_execution():
 @app.route('/start', methods=['GET'])
 def start_bot():
     if bot_manager.is_running():
-        return jsonify({"status": "error", "message": "Bot already running"}), 400
+        return jsonify({"status": "running", "message": "Bot already running"}), 200
 
     try:
         # Create bot instance
@@ -140,9 +140,9 @@ def start_bot():
         time.sleep(2)
 
         if bot_manager.is_running():
-            return jsonify({"status": "success", "message": "Bot started successfully"}), 200
+            return jsonify({"status": "started", "message": "Bot started successfully"}), 200
         else:
-            return jsonify({"status": "error", "message": "Bot failed to start"}), 500
+            return jsonify({"status": "failed", "message": "Bot failed to start"}), 500
 
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
@@ -182,6 +182,35 @@ def health():
         "telegram_token_set": bool(os.getenv('TELEGRAM_BOT_TOKEN')),
         "gemini_key_set": bool(os.getenv('GEMINI_API_KEY'))
     }), 200
+
+@app.route('/cron-start', methods=['GET'])
+def cron_start_bot():
+    """Cron-friendly endpoint that always returns 200 status."""
+    try:
+        if bot_manager.is_running():
+            return jsonify({"status": "running"}), 200
+
+        # Create bot instance
+        bot_manager.bot = ResumeTelegramBot()
+
+        # Start bot in separate thread
+        bot_manager.bot_thread = threading.Thread(target=_run_bot_thread, daemon=True)
+        bot_manager.bot_thread.start()
+
+        # Quick check without long wait
+        time.sleep(1)
+
+        return jsonify({"status": "started"}), 200
+
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        # Still return 200 for cron compatibility
+        return jsonify({"status": "error"}), 200
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    """Simple ping endpoint for health checks."""
+    return jsonify({"status": "ok", "bot": bot_manager.is_running()}), 200
 
 @app.errorhandler(404)
 def not_found(_):
