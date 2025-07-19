@@ -101,8 +101,7 @@ async def _async_bot_execution():
         await application.updater.start_polling(
             poll_interval=2.0,
             timeout=30,
-            bootstrap_retries=5,
-            stop_signals=None  # Disable signal handling to avoid threading issues
+            bootstrap_retries=5
         )
 
         logger.info("Bot is running and polling...")

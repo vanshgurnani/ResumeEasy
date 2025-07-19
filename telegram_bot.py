@@ -658,8 +658,7 @@ Found a bug or have suggestions? We'd love to hear from you!
             application.run_polling(
                 poll_interval=1.0,
                 timeout=10,
-                bootstrap_retries=-1,
-                stop_signals=None  # Disable signal handling to avoid threading issues
+                bootstrap_retries=-1
             )
 
         except Exception as e:
@@ -683,8 +682,7 @@ Found a bug or have suggestions? We'd love to hear from you!
             await application.updater.start_polling(
                 poll_interval=1.0,
                 timeout=10,
-                bootstrap_retries=-1,
-                stop_signals=None  # Disable signal handling to avoid threading issues
+                bootstrap_retries=-1
             )
 
             # Keep running until stopped
