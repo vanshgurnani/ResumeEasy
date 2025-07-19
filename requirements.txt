@@ -1,10 +1,29 @@
+# Core Flask and web framework
+flask
+flask-cors
+gunicorn
+
+# Telegram bot framework
 python-telegram-bot
+
+# Google AI and machine learning
 google-generativeai
+
+# Environment and configuration
 python-dotenv
+
+# File processing and document handling
 PyPDF2
 python-docx
 Pillow
 aiofiles
-flask
-flask-cors
-gunicorn
+
+# Web automation and PDF generation
+playwright
+pdfkit
+
+# Async support and utilities
+asyncio-mqtt
+
+# Additional utilities
+typing-extensions
