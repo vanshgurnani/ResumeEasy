@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from typing import Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -84,11 +84,13 @@ I can help you extract and analyze information from resumes.
 Just upload your resume file and I'll get started! 🚀
         """
         
+        # Custom keyboard for command auto-suggest
         keyboard = [
-            [InlineKeyboardButton("📖 Help", callback_data="help")],
-            [InlineKeyboardButton("ℹ️ About", callback_data="about")]
+            ["/help", "/about"],
+            ["/chat", "/interview"],
+            ["/stop"]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
         await update.message.reply_text(
             welcome_message,

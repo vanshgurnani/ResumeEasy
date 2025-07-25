@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Resume</title>
+  <style>
+    body {{ font-family: Georgia, serif; margin: 40px; font-size: 12px; color: #000; }}
+    h1 {{ font-size: 22px; margin-bottom: 5px; }}
+    h2 {{ font-size: 14px; margin-top: 25px; border-bottom: 1px solid black; padding-bottom: 3px; }}
+    p, li {{ line-height: 1.5; }}
+    .section {{ margin-bottom: 15px; }}
+    .title {{ font-weight: bold; }}
+    .date {{ float: right; font-style: italic; }}
+    .org {{ font-style: italic; }}
+    ul {{ padding-left: 20px; margin-top: 5px; }}
+    .clear {{ clear: both; }}
+  </style>
+</head>
+<body>
+
+<h1>{name}</h1>
+<p>{location} | {phone} | {email}</p>
+
+<h2>EDUCATION</h2>
+{education_section}
+
+<h2>EXPERIENCE</h2>
+{experience_section}
+
+<h2>SKILLS</h2>
+{skills_section}
+
+<h2>PROJECTS</h2>
+{projects_section}
+
+<h2>ACHIEVEMENTS</h2>
+<ul>
+{achievements_section}
+</ul>
+
+</body>
+</html> 
