@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume Analyzer - AI-Powered Resume Insights</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary': '#3B82F6',
+                        'primary-dark': '#1E40AF',
+                        'secondary': '#10B981',
+                        'accent': '#F59E0B',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div x-data="resumeAnalyzer()" class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-12">
+            <div class="flex items-center justify-center mb-4">
+                <i class="fas fa-file-alt text-5xl text-primary mr-4"></i>
+                <h1 class="text-4xl md:text-6xl font-bold text-gray-800">Resume Analyzer</h1>
+            </div>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                Upload your resume and get AI-powered insights, chat with your data, and prepare for interviews.
+            </p>
+        </header>
+
+        <!-- Main Content Area -->
+        <div class="max-w-6xl mx-auto">
+            <!-- Upload Section -->
+            <div x-show="!resumeData" class="bg-white rounded-xl shadow-xl p-8 mb-8">
+                <div class="text-center">
+                    <div class="mb-6">
+                        <i class="fas fa-cloud-upload-alt text-6xl text-gray-400 mb-4"></i>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-2">Upload Your Resume</h2>
+                        <p class="text-gray-600">Supported formats: PDF, DOCX, TXT, Images (JPG, PNG)</p>
+                    </div>
+
+                    <!-- File Upload Area -->
+                    <div 
+                        @drop.prevent="handleDrop($event)"
+                        @dragover.prevent
+                        @dragenter.prevent
+                        class="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-6 transition-colors hover:border-primary"
+                        :class="{'border-primary bg-blue-50': isDragging}"
+                        @dragenter="isDragging = true"
+                        @dragleave="isDragging = false"
+                    >
+                        <div x-show="!selectedFile">
+                            <i class="fas fa-file-upload text-4xl text-gray-400 mb-4"></i>
+                            <p class="text-lg mb-2">Drag and drop your resume here</p>
+                            <p class="text-gray-500 mb-4">or</p>
+                            <label for="fileInput" class="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg cursor-pointer transition-colors">
+                                Choose File
+                            </label>
+                            <input 
+                                type="file" 
+                                id="fileInput" 
+                                @change="handleFileSelect($event)"
+                                accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.bmp,.tiff"
+                                class="hidden"
+                            >
+                        </div>
+                        
+                        <div x-show="selectedFile" class="text-center">
+                            <i class="fas fa-file-check text-4xl text-green-500 mb-4"></i>
+                            <p class="text-lg font-semibold" x-text="selectedFile?.name"></p>
+                            <p class="text-gray-500" x-text="formatFileSize(selectedFile?.size)"></p>
+                            <button 
+                                @click="clearFile()"
+                                class="text-red-500 hover:text-red-700 mt-2"
+                            >
+                                <i class="fas fa-times mr-1"></i> Remove
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Upload Button -->
+                    <button 
+                        @click="uploadResume()"
+                        :disabled="!selectedFile || isLoading"
+                        class="bg-primary hover:bg-primary-dark disabled:bg-gray-400 text-white px-8 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+                    >
+                        <span x-show="!isLoading">
+                            <i class="fas fa-magic mr-2"></i>Analyze Resume
+                        </span>
+                        <span x-show="isLoading">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Analyzing...
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div x-show="resumeData" class="space-y-8">
+                <!-- Resume Overview -->
+                <div class="bg-white rounded-xl shadow-xl p-8">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <i class="fas fa-user-circle mr-2 text-primary"></i>Resume Analysis
+                        </h2>
+                        <button 
+                            @click="resetAnalysis()"
+                            class="text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Personal Info -->
+                    <div x-show="resumeData?.personal_info" class="mb-8">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-700">Personal Information</h3>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div x-show="resumeData?.personal_info?.name">
+                                <label class="text-sm font-medium text-gray-500">Name</label>
+                                <p class="text-lg" x-text="resumeData?.personal_info?.name"></p>
+                            </div>
+                            <div x-show="resumeData?.personal_info?.email">
+                                <label class="text-sm font-medium text-gray-500">Email</label>
+                                <p class="text-lg" x-text="resumeData?.personal_info?.email"></p>
+                            </div>
+                            <div x-show="resumeData?.personal_info?.phone">
+                                <label class="text-sm font-medium text-gray-500">Phone</label>
+                                <p class="text-lg" x-text="resumeData?.personal_info?.phone"></p>
+                            </div>
+                            <div x-show="resumeData?.personal_info?.location">
+                                <label class="text-sm font-medium text-gray-500">Location</label>
+                                <p class="text-lg" x-text="resumeData?.personal_info?.location"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Skills -->
+                    <div x-show="resumeData?.skills" class="mb-8">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-700">Skills</h3>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div x-show="resumeData?.skills?.technical?.length > 0">
+                                <h4 class="font-medium text-gray-600 mb-2">Technical Skills</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="skill in resumeData?.skills?.technical" :key="skill">
+                                        <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm" x-text="skill"></span>
+                                    </template>
+                                </div>
+                            </div>
+                            <div x-show="resumeData?.skills?.soft?.length > 0">
+                                <h4 class="font-medium text-gray-600 mb-2">Soft Skills</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="skill in resumeData?.skills?.soft" :key="skill">
+                                        <span class="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm" x-text="skill"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Experience -->
+                    <div x-show="resumeData?.experience?.length > 0" class="mb-8">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-700">Work Experience</h3>
+                        <div class="space-y-4">
+                            <template x-for="exp in resumeData?.experience" :key="exp.company + exp.position">
+                                <div class="border-l-4 border-primary pl-4 py-2">
+                                    <h4 class="font-semibold text-lg" x-text="exp.position"></h4>
+                                    <p class="text-primary font-medium" x-text="exp.company"></p>
+                                    <p class="text-gray-600 text-sm" x-text="exp.duration"></p>
+                                    <div x-show="exp.responsibilities?.length > 0" class="mt-2">
+                                        <ul class="list-disc list-inside text-gray-700 space-y-1">
+                                            <template x-for="resp in exp.responsibilities" :key="resp">
+                                                <li x-text="resp"></li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid md:grid-cols-3 gap-4">
+                    <button 
+                        @click="showChatModal = true"
+                        class="bg-secondary hover:bg-green-600 text-white p-6 rounded-xl font-semibold transition-colors"
+                    >
+                        <i class="fas fa-comments text-2xl mb-2"></i>
+                        <p>Chat with Resume</p>
+                    </button>
+                    <button 
+                        @click="showInterviewModal = true"
+                        class="bg-accent hover:bg-yellow-600 text-white p-6 rounded-xl font-semibold transition-colors"
+                    >
+                        <i class="fas fa-microphone text-2xl mb-2"></i>
+                        <p>Interview Prep</p>
+                    </button>
+                    <button 
+                        @click="exportToPDF()"
+                        class="bg-purple-500 hover:bg-purple-600 text-white p-6 rounded-xl font-semibold transition-colors"
+                    >
+                        <i class="fas fa-file-pdf text-2xl mb-2"></i>
+                        <p>Export PDF</p>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Modal -->
+        <div x-show="showChatModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" @click.away="showChatModal = false">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 h-3/4 flex flex-col">
+                <div class="flex items-center justify-between p-6 border-b">
+                    <h3 class="text-xl font-bold">Chat with Your Resume</h3>
+                    <button @click="showChatModal = false" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="flex-1 overflow-y-auto p-6 space-y-4" x-ref="chatContainer">
+                    <template x-for="message in chatHistory" :key="message.timestamp">
+                        <div class="flex" :class="message.user ? 'justify-end' : 'justify-start'">
+                            <div class="max-w-xs lg:max-w-md px-4 py-2 rounded-lg" :class="message.user ? 'bg-primary text-white' : 'bg-gray-200 text-gray-800'">
+                                <p x-text="message.user || message.bot"></p>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+                <div class="p-6 border-t">
+                    <div class="flex space-x-2">
+                        <input 
+                            x-model="chatMessage"
+                            @keyup.enter="sendChatMessage()"
+                            type="text" 
+                            placeholder="Ask me anything about your resume..."
+                            class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                        <button 
+                            @click="sendChatMessage()"
+                            :disabled="!chatMessage.trim() || isChatLoading"
+                            class="bg-primary hover:bg-primary-dark disabled:bg-gray-400 text-white px-6 py-2 rounded-lg transition-colors"
+                        >
+                            <i class="fas fa-paper-plane" :class="{'fa-spin': isChatLoading}"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Interview Prep Modal -->
+        <div x-show="showInterviewModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" @click.away="showInterviewModal = false">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 h-3/4 overflow-y-auto">
+                <div class="flex items-center justify-between p-6 border-b">
+                    <h3 class="text-xl font-bold">Interview Preparation</h3>
+                    <button @click="showInterviewModal = false" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                
+                <div class="p-6">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Job Role (Optional)</label>
+                        <input 
+                            x-model="jobRole"
+                            type="text" 
+                            placeholder="e.g., Software Developer, Data Scientist"
+                            class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                    </div>
+                    
+                    <button 
+                        @click="generateInterviewPrep()"
+                        :disabled="isInterviewLoading"
+                        class="bg-accent hover:bg-yellow-600 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold transition-colors mb-6"
+                    >
+                        <span x-show="!isInterviewLoading">
+                            <i class="fas fa-lightbulb mr-2"></i>Generate Prep Questions
+                        </span>
+                        <span x-show="isInterviewLoading">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Generating...
+                        </span>
+                    </button>
+                    
+                    <div x-show="interviewPrep" x-html="interviewPrep" class="prose max-w-none"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error/Success Toast -->
+        <div 
+            x-show="toast.show" 
+            x-transition
+            class="fixed bottom-4 right-4 z-50 p-4 rounded-lg shadow-lg"
+            :class="toast.type === 'error' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'"
+        >
+            <div class="flex items-center">
+                <i class="fas" :class="toast.type === 'error' ? 'fa-exclamation-circle' : 'fa-check-circle'"></i>
+                <span class="ml-2" x-text="toast.message"></span>
+                <button @click="toast.show = false" class="ml-4">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function resumeAnalyzer() {
+            return {
+                selectedFile: null,
+                resumeData: null,
+                sessionId: null,
+                isLoading: false,
+                isDragging: false,
+                
+                // Chat functionality
+                showChatModal: false,
+                chatMessage: '',
+                chatHistory: [],
+                isChatLoading: false,
+                
+                // Interview prep
+                showInterviewModal: false,
+                jobRole: '',
+                interviewPrep: '',
+                isInterviewLoading: false,
+                
+                // Toast notifications
+                toast: {
+                    show: false,
+                    message: '',
+                    type: 'success'
+                },
+
+                handleDrop(event) {
+                    this.isDragging = false;
+                    const files = event.dataTransfer.files;
+                    if (files.length > 0) {
+                        this.selectedFile = files[0];
+                    }
+                },
+
+                handleFileSelect(event) {
+                    this.selectedFile = event.target.files[0];
+                },
+
+                clearFile() {
+                    this.selectedFile = null;
+                    document.getElementById('fileInput').value = '';
+                },
+
+                formatFileSize(bytes) {
+                    if (!bytes) return '';
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                    return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+                },
+
+                async uploadResume() {
+                    if (!this.selectedFile) return;
+                    
+                    this.isLoading = true;
+                    
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', this.selectedFile);
+                        
+                        const response = await fetch('/api/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.resumeData = result.resume_data;
+                            this.sessionId = result.session_id;
+                            this.showToast(result.message, 'success');
+                        } else {
+                            this.showToast(result.error || 'Upload failed', 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('Upload failed: ' + error.message, 'error');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async sendChatMessage() {
+                    if (!this.chatMessage.trim() || this.isChatLoading) return;
+                    
+                    const userMessage = this.chatMessage;
+                    this.chatHistory.push({ user: userMessage, timestamp: Date.now() });
+                    this.chatMessage = '';
+                    this.isChatLoading = true;
+                    
+                    try {
+                        const response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                message: userMessage,
+                                session_id: this.sessionId
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.chatHistory.push({ bot: result.response, timestamp: Date.now() });
+                            // Scroll to bottom
+                            this.$nextTick(() => {
+                                this.$refs.chatContainer.scrollTop = this.$refs.chatContainer.scrollHeight;
+                            });
+                        } else {
+                            this.showToast(result.error || 'Chat failed', 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('Chat failed: ' + error.message, 'error');
+                    } finally {
+                        this.isChatLoading = false;
+                    }
+                },
+
+                async generateInterviewPrep() {
+                    this.isInterviewLoading = true;
+                    
+                    try {
+                        const response = await fetch('/api/interview-prep', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                job_role: this.jobRole || 'Software Developer',
+                                session_id: this.sessionId
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.interviewPrep = result.interview_prep;
+                        } else {
+                            this.showToast(result.error || 'Interview prep generation failed', 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('Interview prep failed: ' + error.message, 'error');
+                    } finally {
+                        this.isInterviewLoading = false;
+                    }
+                },
+
+                async exportToPDF() {
+                    try {
+                        const response = await fetch('/api/export-pdf', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                session_id: this.sessionId
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.showToast('PDF export ready!', 'success');
+                            // Handle PDF download logic here
+                        } else {
+                            this.showToast(result.error || 'PDF export failed', 'error');
+                        }
+                    } catch (error) {
+                        this.showToast('PDF export failed: ' + error.message, 'error');
+                    }
+                },
+
+                resetAnalysis() {
+                    this.resumeData = null;
+                    this.sessionId = null;
+                    this.selectedFile = null;
+                    this.chatHistory = [];
+                    this.interviewPrep = '';
+                    this.clearFile();
+                },
+
+                showToast(message, type = 'success') {
+                    this.toast = {
+                        show: true,
+                        message: message,
+                        type: type
+                    };
+                    
+                    setTimeout(() => {
+                        this.toast.show = false;
+                    }, 5000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

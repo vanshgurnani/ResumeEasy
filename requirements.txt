@@ -2,6 +2,7 @@
 flask
 flask-cors
 gunicorn
+werkzeug
 
 # Telegram bot framework
 python-telegram-bot
